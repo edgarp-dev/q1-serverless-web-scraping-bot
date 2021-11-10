@@ -1,0 +1,6 @@
+node_modules
+.vscode
+/Q2KeycapWebScraperLambdaFunction/build
+/AvailabilityProcessorLambdaFunction/build
+/NotificationBuilderLambdaFunction/build
+samconfig.toml

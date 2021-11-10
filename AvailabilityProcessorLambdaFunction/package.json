@@ -1,0 +1,17 @@
+{
+    "name": "availability-processor-lambda-function",
+    "description": "Lambda to do web scraping for q2 mechanical keyboard keycaps",
+    "version": "1.0.0",
+    "private": true,
+    "dependencies": {
+        "aws-sdk": "^2.1009.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.84",
+        "@types/node": "^16.11.1",
+        "typescript": "^4.4.4"
+    },
+    "scripts": {
+        "compile": "tsc"
+    }
+}

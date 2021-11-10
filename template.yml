@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  keychron-keycaps-web-scraper-bot
+
+Transform:
+- AWS::Serverless-2016-10-31
+
+Resources:
+  ##########################################################################
+  #   Lambda                                                               #
+  ##########################################################################  
+  Q1KeycapWebScraperLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Lambda to do web scraping for Q1 mechanical keyboard keycaps
+      CodeUri: Q1KeycapWebScraperLambdaFunction/build
+      Handler: handler.lambdaHandler
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Environment:
+        Variables:
+          SoldOutKeycapsDynamoDBTable: !Ref SoldOutKeycapsDynamoDBTable
+          AvailableKeycapsDynamoDBTable: !Ref AvailableKeycapsDynamoDBTable
+      Role: !GetAtt Q1KeycapWebScraperLambdaRole.Arn
+      Events:
+        WebScraperScheduledEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(8 minutes)
+  
+  AvailabilityProcessorLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Lambda to check keycap availability changes
+      CodeUri: AvailabilityProcessorLambdaFunction/build
+      Handler: handler.lambdaHandler
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 100
+      Environment:
+        Variables:
+          SoldOutKeycapsDynamoDBTable: !Ref SoldOutKeycapsDynamoDBTable
+          AvailableKeycapsDynamoDBTable: !Ref AvailableKeycapsDynamoDBTable
+          AvailableKeycapSetNotificationsQueue: !Ref AvailableKeycapSetNotificationsQueue
+      Role: !GetAtt AvailabilityProcessorLambdaRole.Arn
+      Events:
+        AvailableKeycapsDynamoDBTableEvent:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt AvailableKeycapsDynamoDBTable.StreamArn
+            StartingPosition: TRIM_HORIZON
+            BatchSize: 10
+
+  NotificationBuilderLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Lambda to build keycaps availability change notifications
+      CodeUri: NotificationBuilderLambdaFunction/build
+      Handler: handler.lambdaHandler
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 25
+      Environment:
+        Variables:
+          TelegramBotTokenSSMParameterName: 'Q1TelegramBotToken'
+      Role: !GetAtt NotificationBuilderLambdaRole.Arn
+      Events:
+        AvailableKeycapSetNotificationsQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AvailableKeycapSetNotificationsQueue.Arn
+            BatchSize: 10
+
+  ##########################################################################
+  #   IAM Roles                                                            #
+  ##########################################################################
+  Q1KeycapWebScraperLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: Q1KeycapWebScraperLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:GetLogEvents
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            Resource: !GetAtt SoldOutKeycapsDynamoDBTable.Arn
+          - Effect: Allow
+            Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            Resource: !GetAtt AvailableKeycapsDynamoDBTable.Arn
+
+  AvailabilityProcessorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: AvailabilityProcessorLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:GetLogEvents
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:DeleteItem
+            Resource: !GetAtt SoldOutKeycapsDynamoDBTable.Arn
+          - Effect: Allow
+            Action:
+            - dynamodb:DeleteItem
+            Resource: !GetAtt AvailableKeycapsDynamoDBTable.Arn
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+            - dynamodb:ListStreams
+            - dynamodb:ListShards
+            Resource: !Join [ /, [ !GetAtt AvailableKeycapsDynamoDBTable.Arn, "stream", "*" ] ]
+          - Effect: Allow
+            Action:
+            - sqs:SendMessage
+            Resource: !GetAtt AvailableKeycapSetNotificationsQueue.Arn
+  
+  NotificationBuilderLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: NotificationBuilderLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:GetLogEvents
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - sqs:DeleteMessage
+            - sqs:ReceiveMessage
+            - sqs:GetQueueAttributes
+            Resource: !GetAtt AvailableKeycapSetNotificationsQueue.Arn
+          -
+            Effect: Allow
+            Action:
+              - 'ssm:GetParameter*'
+            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Q1TelegramBotToken'
+  
+  ##########################################################################
+  #   DynamoDB                                                            #
+  ##########################################################################
+  SoldOutKeycapsDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: ID
+        AttributeType: S
+      KeySchema:
+      - AttributeName: ID
+        KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+  
+  AvailableKeycapsDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: ID
+        AttributeType: S
+      KeySchema:
+      - AttributeName: ID
+        KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+
+  ##########################################################################
+  #   SQS                                                                  #
+  ##########################################################################
+  AvailableKeycapSetNotificationsQueue:
+    Type: AWS::SQS::Queue

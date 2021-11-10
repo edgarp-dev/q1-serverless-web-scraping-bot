@@ -1,0 +1,18 @@
+{
+    "name": "notification-builder-lambda-function",
+    "description": "Lambda create notification when keycap set becomes available",
+    "version": "1.0.0",
+    "private": true,
+    "dependencies": {
+        "got": "^11.0.2",
+        "aws-sdk": "^2.1009.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.84",
+        "@types/node": "^16.11.1",
+        "typescript": "^4.4.4"
+    },
+    "scripts": {
+        "compile": "tsc"
+    }
+}
